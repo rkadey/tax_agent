@@ -36,7 +36,7 @@ class AgentState(TypedDict):
 SCENARIOS = [
     {"id": 1, "salary": 4000, "allowances": 0, "tax_relief": 0},
     {"id": 2, "salary": 8000, "allowances": 1000, "tax_relief": 200},
-    {"id": 3, "salary": 15000, "allowances": 2500, "tax_relief": 500}
+    {"id": 3, "salary": 18000, "allowances": 2500, "tax_relief": 500}
 ]
 
 
@@ -192,31 +192,23 @@ class GhanaTaxAgent:
             # Extract net income - look for the take-home pay result
             net_income_text = None
             result_selectors = [
-                (By.XPATH, '//*[contains(text(), "Take") and contains(text(), "Home")]'),
-                (By.XPATH, '//*[contains(text(), "take") and contains(text(), "home")]'),
-                (By.XPATH, '//*[contains(text(), "Net") and contains(text(), "Income")]'),
-                (By.XPATH, '//*[contains(text(), "net") and contains(text(), "income")]'),
+                (By.XPATH, '//*[@id="results"]/div[1]/h1'),
+                (By.XPATH, '/html/body/div/div/section/div[2]/div[1]/div[1]/h1'),
                 (By.CLASS_NAME, 'result'),
                 (By.CLASS_NAME, 'net-income'),
                 (By.CLASS_NAME, 'take-home'),
-                (By.ID, 'net-income'),
-                (By.ID, 'take-home'),
-                (By.ID, 'result'),
-                (By.CSS_SELECTOR, '.result-value'),
-                (By.CSS_SELECTOR, '.net-income-value'),
-                (By.CSS_SELECTOR, 'div.result'),
-                (By.CSS_SELECTOR, 'span.result'),
-                (By.CSS_SELECTOR, 'p.result'),
-                (By.XPATH, '//div[@class="result"]'),
-                (By.XPATH, '//span[@class="result"]')
+                (By.ID, 'results'),
+                (By.CSS_SELECTOR, '#results > div.text-primary.mt-4.mb-6 > h1')
             ]
             
             for selector_type, selector_value in result_selectors:
                 try:
                     element = self.driver.find_element(selector_type, selector_value)
                     text = element.text
+                    print(text)
                     # Extract numeric value from text
                     numbers = re.findall(r'[\d,]+\.?\d*', text.replace(',', ''))
+                    print(numbers)
                     if numbers:
                         # Get the last/largest number (usually the result)
                         net_income_text = max(numbers, key=lambda x: float(x.replace(',', '')))
