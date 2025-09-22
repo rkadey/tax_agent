@@ -38,7 +38,7 @@ class AgentState(TypedDict):
 SCENARIOS = [
     {"id": 1, "salary": 4000, "allowances": 0, "tax_relief": 0},
     {"id": 2, "salary": 8000, "allowances": 1000, "tax_relief": 200},
-    {"id": 3, "salary": 18000, "allowances": 2500, "tax_relief": 500}
+    {"id": 3, "salary": 15000, "allowances": 2500, "tax_relief": 500}
 ]
 
 
@@ -109,7 +109,7 @@ class GhanaTaxAgent:
             self.driver.get("https://kessir.github.io/taxcalculatorgh/")
             time.sleep(3)  
             
-            print('scraping started...')
+            logger.info('scraping started...')
             # Gross Income 
             salary_filled = False
             salary_selectors = [
@@ -130,7 +130,7 @@ class GhanaTaxAgent:
                     continue
             
             if not salary_filled:
-                print(f"Warning: Could not fill salary field for scenario {state['scenario_id']}")
+                logger.error(f"Warning: Could not fill salary field for scenario {state['scenario_id']}")
             
             # Allowances field
             allowances_filled = False
@@ -154,7 +154,7 @@ class GhanaTaxAgent:
                     continue
             
             if not allowances_filled:
-                print(f"Warning: Could not fill allowances field for scenario {state['scenario_id']}")
+                logger.error(f"Warning: Could not fill allowances field for scenario {state['scenario_id']}")
             
             # Tax relief
             relief_filled = False
@@ -180,7 +180,7 @@ class GhanaTaxAgent:
                     continue
             
             if not relief_filled:
-                print(f"Warning: Could not fill tax relief field for scenario {state['scenario_id']}")
+                logger.error(f"Warning: Could not fill tax relief field for scenario {state['scenario_id']}")
             
 
             try:
@@ -207,10 +207,10 @@ class GhanaTaxAgent:
                 try:
                     element = self.driver.find_element(selector_type, selector_value)
                     text = element.text
-                    print(text)
+                    #print(text)
                   
                     numbers = re.findall(r'[\d,]+\.?\d*', text.replace(',', ''))
-                    print(numbers)
+                    #print(numbers)
                     if numbers:
                         net_income_text = max(numbers, key=lambda x: float(x.replace(',', '')))
                         break
@@ -238,7 +238,7 @@ class GhanaTaxAgent:
                 print(f"Warning: Could not scrape net income for scenario {state['scenario_id']}. Using estimate.")
                 state["net_income"] = self._estimate_net_income(state)
             
-            print(f"Scenario {state['scenario_id']}: Net Income = GHS {state['net_income']:.2f}")
+            logger.info(f"Scenario {state['scenario_id']}: Net Income = GHS {state['net_income']:.2f}")
             
         except Exception as e:
             print(f"Error scraping tax calculator: {e}")
