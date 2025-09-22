@@ -21,7 +21,7 @@ cd ghana-tax-calculator-agent`
 ##### 4. Run the agent
 `python agent.py`
 <br><br>
-# The Workflow
+## The Workflow
 
 ##### 1. Runs 3 predefined tax scenarios
 

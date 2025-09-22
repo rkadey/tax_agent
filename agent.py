@@ -21,6 +21,8 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.units import inch
+from logger import logger
+from from_root import from_root
 
 
 class AgentState(TypedDict):
@@ -105,7 +107,7 @@ class GhanaTaxAgent:
                 self._setup_driver()
             
             self.driver.get("https://kessir.github.io/taxcalculatorgh/")
-            time.sleep(2)  
+            time.sleep(3)  
             
             print('scraping started...')
             # Gross Income 
@@ -206,20 +208,17 @@ class GhanaTaxAgent:
                     element = self.driver.find_element(selector_type, selector_value)
                     text = element.text
                     print(text)
-                    # Extract numeric value from text
+                  
                     numbers = re.findall(r'[\d,]+\.?\d*', text.replace(',', ''))
                     print(numbers)
                     if numbers:
-                        # Get the last/largest number (usually the result)
                         net_income_text = max(numbers, key=lambda x: float(x.replace(',', '')))
                         break
                 except (NoSuchElementException, TimeoutException):
                     continue
             
-            # If still no result, try getting all text and finding patterns
             if not net_income_text:
                 page_text = self.driver.find_element(By.TAG_NAME, 'body').text
-                # Look for patterns like "GHS X,XXX.XX" or numbers after keywords
                 patterns = [
                     r'(?:take.*?home|net.*?income)[^\d]*?([\d,]+\.?\d*)',
                     r'GHS\s*([\d,]+\.?\d*)',
@@ -230,14 +229,12 @@ class GhanaTaxAgent:
                 for pattern in patterns:
                     matches = re.findall(pattern, page_text, re.IGNORECASE)
                     if matches:
-                        # Get the largest number found (likely the net income)
                         net_income_text = max(matches, key=lambda x: float(x.replace(',', '')))
                         break
             
             if net_income_text:
                 state["net_income"] = float(net_income_text.replace(',', ''))
             else:
-                # Fallback calculation if scraping fails
                 print(f"Warning: Could not scrape net income for scenario {state['scenario_id']}. Using estimate.")
                 state["net_income"] = self._estimate_net_income(state)
             
@@ -295,7 +292,7 @@ class GhanaTaxAgent:
                 You are a financial advisor in Ghana. Create a monthly budget for someone with a net income of GHS {net_income:.2f}.
                 
                 Include these categories:
-                - Housing (rent/mortgage)
+                - Housing
                 - Food & Groceries
                 - Transport
                 - Utilities (electricity, water, internet)
@@ -319,22 +316,17 @@ class GhanaTaxAgent:
                 
                 message = prompt.format(net_income=net_income)
                 response = self.llm.invoke([HumanMessage(content=message)])
-                
-                # Parse JSON response with better error handling
                 content = response.content
                 
-                # Try to extract JSON from the response
                 json_match = re.search(r'\{[\s\S]*\}', content)
                 if json_match:
                     json_str = json_match.group(0)
                     budget_data = json.loads(json_str)
                 else:
-                    # Try direct parsing
                     budget_data = json.loads(content)
                 
-                # Validate and clean the budget data
-                if "categories" in budget_data and isinstance(budget_data["categories"], list):
-                    # Ensure percentages are calculated correctly
+              
+                if "categories" in budget_data and isinstance(budget_data["categories"], list):   
                     for category in budget_data["categories"]:
                         if "amount" in category and net_income > 0:
                             category["percentage"] = round((category["amount"] / net_income) * 100, 1)
@@ -352,8 +344,8 @@ class GhanaTaxAgent:
     
 
     def _generate_fallback_budget(self, net_income: float) -> Dict[str, Any]:
-        """Generate rule-based budget for Ghana"""
-        # Percentage allocations based on income level
+        """Generate rule-based budget in case LLM does not work."""
+     
         if net_income <= 5000:
             allocations = {
                 "Housing": 0.30,
@@ -409,9 +401,14 @@ class GhanaTaxAgent:
     def create_pdf(self, state: AgentState) -> AgentState:
         """Create PDF budget report"""
         scenario_id = state["scenario_id"]
+
+        artifacts_dir = os.path.join(from_root(), "artifacts")
+        os.makedirs(artifacts_dir, exist_ok=True)
+
         filename = f"budget_case{scenario_id}.pdf"
+        file_path = os.path.join(artifacts_dir, filename)
         
-        doc = SimpleDocTemplate(filename, pagesize=letter)
+        doc = SimpleDocTemplate(file_path, pagesize=letter)
         elements = []
         styles = getSampleStyleSheet()
         
@@ -433,7 +430,7 @@ class GhanaTaxAgent:
             ["Monthly Allowances", f"{state['allowances']:,.2f}"],
             ["Tax Relief", f"{state['tax_relief']:,.2f}"],
             ["", ""],
-            ["<b>Net Income (Take Home)</b>", f"<b>GHS {state['net_income']:,.2f}</b>"]
+            ["Net Income (Take Home)", f"GHS {state['net_income']:,.2f}"]
         ]
         
         params_table = Table(params_data, colWidths=[3*inch, 2*inch])
@@ -464,7 +461,7 @@ class GhanaTaxAgent:
             total += category['amount']
         
         budget_data.append(["", "", ""])
-        budget_data.append(["<b>Total</b>", f"<b>{total:,.2f}</b>", f"<b>{(total/state['net_income']*100):.1f}%</b>"])
+        budget_data.append(["Total", f"{total:,.2f}", f"{(total/state['net_income']*100):.1f}%"])
         
         budget_table = Table(budget_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch])
         budget_table.setStyle(TableStyle([
@@ -489,8 +486,8 @@ class GhanaTaxAgent:
         
         # Build PDF
         doc.build(elements)
-        state["pdf_path"] = filename
-        print(f"PDF created: {filename}")
+        state["pdf_path"] = file_path
+        logger.info(f"PDF created: {file_path}")
         
         return state
     
@@ -513,50 +510,46 @@ class GhanaTaxAgent:
     
     def run(self):
         """Run the agent for all scenarios"""
-        print("Starting Ghana Tax Calculator Agent (Selenium)...")
-        print("-" * 50)
+        logger.info("Starting Ghana Tax Calculator Agent (Selenium)...")
+        logger.info("-" * 50)
         
         try:
             for scenario in SCENARIOS:
-                print(f"\nProcessing Scenario {scenario['id']}...")
-                print(f"  Salary: GHS {scenario['salary']:,}")
-                print(f"  Allowances: GHS {scenario['allowances']:,}")
-                print(f"  Tax Relief: GHS {scenario['tax_relief']:,}")
+                logger.info(f"\nProcessing Scenario {scenario['id']}...")
+                logger.info(f"Salary: GHS {scenario['salary']:,}")
+                logger.info(f"Allowances: GHS {scenario['allowances']:,}")
+                logger.info(f"Tax Relief: GHS {scenario['tax_relief']:,}")
                 
                 result = self.process_scenario(scenario)
                 
                 if result.get("error"):
-                    print(f"  ⚠ Warning: {result['error']}")
+                    logger.error(f"\n[WARNING]: {result['error']}")
                 
-                print(f"  ✓ Net Income: GHS {result['net_income']:,.2f}")
-                print(f"  ✓ Budget generated")
-                print(f"  ✓ PDF created: {result['pdf_path']}")
+                logger.info(f"\n+ Net Income: GHS {result['net_income']:,.2f}")
+                logger.info(f"\n+ Budget generated")
+                logger.info(f"\n+ PDF created: {result['pdf_path']}")
             
-            print("\n" + "=" * 50)
-            print("All scenarios processed successfully!")
-            print("PDFs generated: budget_case1.pdf, budget_case2.pdf, budget_case3.pdf")
+            logger.info("\n" + "=" * 50)
+            logger.info("All scenarios processed successfully!")
+            logger.info("PDFs generated: budget_case1.pdf, budget_case2.pdf, budget_case3.pdf")
         
         finally:
-            # Always close the driver
             self._close_driver()
 
 
 def main():
     """Main entry point"""
-    # Try to load .env file
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass
     
-    # Get API key from environment or use None for fallback
     api_key = os.getenv("OPENAI_API_KEY", None)
-    
     if not api_key:
-        print("Note: No OPENAI_API_KEY found. Using fallback budget generation.")
-        print("To use AI-powered budget generation, set your OPENAI_API_KEY environment variable.")
-        print("-" * 50)
+        logger.info("Note: No OPENAI_API_KEY found. Using fallback budget generation.")
+        logger.info("To use AI-powered budget generation, set your OPENAI_API_KEY environment variable.")
+        logger.info("-" * 50)
     
     agent = GhanaTaxAgent(llm_api_key=api_key)
     agent.run()
