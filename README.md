@@ -9,7 +9,7 @@ Google Chrome
 ## Setup
 ##### 1. Clone this repository
 
-`git clone https://github.com/your-username/ghana-tax-calculator-agent.git
+`git clone https://github.com/rkadey/tax_agent.git
 cd ghana-tax-calculator-agent`
 
 ##### 2. Install dependencies
